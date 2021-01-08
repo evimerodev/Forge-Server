@@ -5,6 +5,7 @@ const Schema = mongoose.Schema;
 const tokenSchema = new Schema({
   tokenId: { type: String, required: true, unique: true },
   creator: { type: String, required: true, lowercase: true },
+  amount: { type: Number, required: true },
   expirationTime: { type: Number, required: false },
   minBalance: {
     tokenAddress: { type: String, required: false },

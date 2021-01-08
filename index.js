@@ -1,6 +1,9 @@
 require("dotenv").config();
-const { web3, web3Ws } = require("./web3");
 const mongoose = require("mongoose");
+
+const startWeb3 = require("./web3");
+
+const Token = require("./models/Token");
 
 const start = async () => {
   try {
@@ -11,6 +14,9 @@ const start = async () => {
       useUnifiedTopology: true,
     });
     console.log("MongoDB connected...");
+
+    await startWeb3();
+    console.log("Web3 started...");
   } catch (e) {
     console.log(e.message);
     process.exit(1); // kill process if could not connect to mongoDB
