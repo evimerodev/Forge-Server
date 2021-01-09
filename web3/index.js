@@ -1,5 +1,6 @@
 const HDWalletProvider = require("@truffle/hdwallet-provider");
 const Web3 = require("web3");
+const { fromWei } = require("./utils");
 
 const provider = new HDWalletProvider(
   process.env.PRIVATE_KEY,
@@ -31,20 +32,33 @@ module.exports = () => {
   forge.events
     .TransferSingle()
     .on("data", async ({ returnValues }) => {
-      console.log("\nNew TransferSingle Event!");
+      console.log("\nNew Forge Transfer Event!");
       const existingToken = await Token.findOne({
         tokenId: returnValues.id,
       });
 
       // Newly minted tokens
       if (!existingToken && returnValues.from == ZERO_ADDRESS) {
+        const tokenId = returnValues.id;
         console.log(
-          `New NFT collection! Creator: ${returnValues.to} Id: ${returnValues.id}`
+          `New NFT collection! Creator: ${returnValues.to} Id: ${tokenId}`
         );
+
+        const expiration = await forge.methods.expirations(tokenId).call();
+        const amount = await forge.methods.minBalances(tokenId).call();
+        const tokenAddress = await forge.methods
+          .tokenMinBalances(tokenId)
+          .call();
+
         const newToken = new Token({
-          tokenId: returnValues.id,
+          tokenId,
           creator: returnValues.to,
           amount: returnValues.value,
+          expirationTime: Number(expiration),
+          minBalance: {
+            tokenAddress,
+            amount,
+          },
         });
         await newToken.save();
       }
@@ -55,6 +69,40 @@ module.exports = () => {
         );
         existingToken.holders.push(returnValues.to);
         await existingToken.save();
+      }
+    })
+    .on("error", console.error);
+
+  zut.events
+    .Transfer()
+    .on("data", async ({ returnValues }) => {
+      console.log("\nNew ZUT Transfer Event!");
+
+      // Find tokens that user "from" is involved with
+      const tokens = await Token.find({
+        holders: { $all: [returnValues.from] },
+      });
+
+      // Newly minted tokens
+      if (tokens.length > 0) {
+        for (let i in tokens) {
+          const token = tokens[i];
+          if (
+            token.minBalance.tokenAddress.toLowerCase() ==
+            ZUT_ADDRESS.toLowerCase()
+          ) {
+            const balance = await zut.methods
+              .balanceOf(returnValues.from)
+              .call();
+            if (fromWei(balance) < token.minBalance.amount) {
+              console.log(
+                "Adding token to burn list",
+                token.tokenId,
+                returnValues.from
+              );
+            }
+          }
+        }
       }
     })
     .on("error", console.error);
