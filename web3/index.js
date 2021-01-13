@@ -1,5 +1,6 @@
 const HDWalletProvider = require("@truffle/hdwallet-provider");
 const Web3 = require("web3");
+const CronJob = require("cron").CronJob;
 const { fromWei } = require("./utils");
 
 let web3, web3Ws;
@@ -39,17 +40,45 @@ const forge = new web3Ws.eth.Contract(forgeAbi, FORGE_ADDRESS);
 const Token = require("../models/Token");
 const Burn = require("../models/Burn");
 
+// Helper function to add tokens to burn list
 const addToBurnList = async (tokenId, user, reason) => {
-  console.log("Adding token to burn list", tokenId, user);
-  const newBurn = new Burn({
+  const existingBurn = await Burn.findOne({
     tokenId,
     user,
-    reason,
   });
-  await newBurn.save();
+
+  if (!existingBurn) {
+    console.log("Adding token to burn list", tokenId, user);
+    const newBurn = new Burn({
+      tokenId,
+      user,
+      reason,
+    });
+    await newBurn.save();
+  }
+};
+
+// Function executed by cronjob
+const checkForBurns = async () => {
+  console.log("Checking for tokens to burn");
+
+  const tokensToBurn = await Burn.find();
+
+  console.log("Amount to Burn:", tokensToBurn.length);
 };
 
 module.exports = () => {
+  var job = new CronJob(
+    "0 */30 * * * *", // every 30 mins
+    checkForBurns,
+    null,
+    true,
+    "America/Los_Angeles"
+  );
+  job.start();
+  console.log("Cronjob started!");
+
+  // Listen to Forge Transfer events
   forge.events
     .TransferSingle()
     .on("data", async ({ returnValues }) => {
@@ -102,6 +131,7 @@ module.exports = () => {
     })
     .on("error", console.error);
 
+  // Listen to ZUT Transfer events
   zut.events
     .Transfer()
     .on("data", async ({ returnValues }) => {
