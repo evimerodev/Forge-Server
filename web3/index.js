@@ -2,23 +2,33 @@ const HDWalletProvider = require("@truffle/hdwallet-provider");
 const Web3 = require("web3");
 const { fromWei } = require("./utils");
 
-const provider = new HDWalletProvider(
-  process.env.PRIVATE_KEY,
-  `https://rinkeby.infura.io/v3/${process.env.INFURA_KEY}`
-);
+let web3, web3Ws;
 
-// web3 Instances
-const web3 = new Web3(provider);
-const web3Ws = new Web3(
-  `wss://rinkeby.infura.io/ws/v3/${process.env.INFURA_KEY}`
-);
+let ZUT_ADDRESS, FORGE_ADDRESS;
+
+if (process.env.NODE_ENV === "production") {
+  const provider = new HDWalletProvider(
+    process.env.PRIVATE_KEY,
+    `https://rinkeby.infura.io/v3/${process.env.INFURA_KEY}`
+  );
+
+  // web3 Instances
+  web3 = new Web3(provider);
+  web3Ws = new Web3(`wss://rinkeby.infura.io/ws/v3/${process.env.INFURA_KEY}`);
+
+  ZUT_ADDRESS = "0xc0171836BA0036AD0DD24697E22BF3d2d45B45aE";
+  FORGE_ADDRESS = "0x4359C08b706B6BD92E2991d7cD143C5894d1a02f";
+} else {
+  // web3 Instances
+  web3 = new Web3("http://localhost:8545");
+  web3Ws = new Web3(`ws://localhost:8545`);
+
+  ZUT_ADDRESS = "0xC89Ce4735882C9F0f0FE26686c53074E09B0D550";
+  FORGE_ADDRESS = "0x9561C133DD8580860B6b7E504bC5Aa500f0f06a7";
+}
 
 const erc20Abi = require("./erc20Abi");
 const forgeAbi = require("./forgeAbi");
-
-// Constants
-const ZUT_ADDRESS = "0xc0171836BA0036AD0DD24697E22BF3d2d45B45aE";
-const FORGE_ADDRESS = "0x4359C08b706B6BD92E2991d7cD143C5894d1a02f";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 // Contract Instances
@@ -27,6 +37,7 @@ const forge = new web3Ws.eth.Contract(forgeAbi, FORGE_ADDRESS);
 
 // Mongoose Models
 const Token = require("../models/Token");
+const Burn = require("../models/Burn");
 
 module.exports = () => {
   forge.events
@@ -80,7 +91,7 @@ module.exports = () => {
 
       // Find tokens that user "from" is involved with
       const tokens = await Token.find({
-        holders: { $all: [returnValues.from] },
+        holders: { $all: [returnValues.from.toLowerCase()] },
       });
 
       // Newly minted tokens
@@ -95,11 +106,24 @@ module.exports = () => {
               .balanceOf(returnValues.from)
               .call();
             if (fromWei(balance) < token.minBalance.amount) {
-              console.log(
-                "Adding token to burn list",
-                token.tokenId,
-                returnValues.from
-              );
+              const existingBurn = await Burn.findOne({
+                tokenId: token.tokenId,
+                user: returnValues.from,
+              });
+
+              if (!existingBurn) {
+                console.log(
+                  "Adding token to burn list",
+                  token.tokenId,
+                  returnValues.from
+                );
+                const newBurn = new Burn({
+                  tokenId: token.tokenId,
+                  user: returnValues.from,
+                  reason: "Min Balance",
+                });
+                await newBurn.save();
+              }
             }
           }
         }
