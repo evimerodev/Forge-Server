@@ -39,18 +39,29 @@ const forge = new web3Ws.eth.Contract(forgeAbi, FORGE_ADDRESS);
 const Token = require("../models/Token");
 const Burn = require("../models/Burn");
 
+const addToBurnList = async (tokenId, user, reason) => {
+  console.log("Adding token to burn list", tokenId, user);
+  const newBurn = new Burn({
+    tokenId,
+    user,
+    reason,
+  });
+  await newBurn.save();
+};
+
 module.exports = () => {
   forge.events
     .TransferSingle()
     .on("data", async ({ returnValues }) => {
       console.log("\nNew Forge Transfer Event!");
+      const tokenId = returnValues.id;
+
       const existingToken = await Token.findOne({
-        tokenId: returnValues.id,
+        tokenId,
       });
 
       // Newly minted tokens
       if (!existingToken && returnValues.from == ZERO_ADDRESS) {
-        const tokenId = returnValues.id;
         console.log(
           `New NFT collection! Creator: ${returnValues.to} Id: ${tokenId}`
         );
@@ -80,6 +91,13 @@ module.exports = () => {
         );
         existingToken.holders.push(returnValues.to);
         await existingToken.save();
+
+        const canBurn = await forge.methods
+          .canBurn(tokenId, returnValues.to)
+          .call();
+        if (canBurn) {
+          await addToBurnList(tokenId, returnValues.to, "Min Balance");
+        }
       }
     })
     .on("error", console.error);
@@ -102,28 +120,16 @@ module.exports = () => {
             token.minBalance.tokenAddress.toLowerCase() ==
             ZUT_ADDRESS.toLowerCase()
           ) {
-            const balance = await zut.methods
-              .balanceOf(returnValues.from)
+            const canBurn = await forge.methods
+              .canBurn(tokenId, returnValues.from)
               .call();
-            if (fromWei(balance) < token.minBalance.amount) {
-              const existingBurn = await Burn.findOne({
-                tokenId: token.tokenId,
-                user: returnValues.from,
-              });
 
-              if (!existingBurn) {
-                console.log(
-                  "Adding token to burn list",
-                  token.tokenId,
-                  returnValues.from
-                );
-                const newBurn = new Burn({
-                  tokenId: token.tokenId,
-                  user: returnValues.from,
-                  reason: "Min Balance",
-                });
-                await newBurn.save();
-              }
+            if (canBurn) {
+              await addToBurnList(
+                token.tokenId,
+                returnValues.from,
+                "Min Balance"
+              );
             }
           }
         }
