@@ -5,8 +5,9 @@ const { fromWei } = require("./utils");
 
 let web3, web3Ws;
 
-let ZUT_ADDRESS, FORGE_ADDRESS;
+let ZUT_ADDRESS, FORGE_ADDRESS, ADMIN_ADDRESS;
 
+console.log(`Server running in ${process.env.NODE_ENV} mode`);
 if (process.env.NODE_ENV === "production") {
   const provider = new HDWalletProvider(
     process.env.PRIVATE_KEY,
@@ -19,13 +20,15 @@ if (process.env.NODE_ENV === "production") {
 
   ZUT_ADDRESS = "0xc0171836BA0036AD0DD24697E22BF3d2d45B45aE";
   FORGE_ADDRESS = "0x4359C08b706B6BD92E2991d7cD143C5894d1a02f";
+  ADMIN_ADDRESS = "0xb29ae9a9bf7ca2984a6a09939e49d9cf46ab0c1d";
 } else {
   // web3 Instances
   web3 = new Web3("http://localhost:8545");
   web3Ws = new Web3(`ws://localhost:8545`);
 
   ZUT_ADDRESS = "0xC89Ce4735882C9F0f0FE26686c53074E09B0D550";
-  FORGE_ADDRESS = "0x9561C133DD8580860B6b7E504bC5Aa500f0f06a7";
+  FORGE_ADDRESS = "0xe982E462b094850F12AF94d21D470e21bE9D0E9C";
+  ADMIN_ADDRESS = "0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1";
 }
 
 const erc20Abi = require("./erc20Abi");
@@ -35,6 +38,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 // Contract Instances
 const zut = new web3Ws.eth.Contract(erc20Abi, ZUT_ADDRESS);
 const forge = new web3Ws.eth.Contract(forgeAbi, FORGE_ADDRESS);
+const forgeContract = new web3.eth.Contract(forgeAbi, FORGE_ADDRESS);
 
 // Mongoose Models
 const Token = require("../models/Token");
@@ -48,7 +52,7 @@ const addToBurnList = async (tokenId, user, reason) => {
   });
 
   if (!existingBurn) {
-    console.log("Adding token to burn list", tokenId, user);
+    console.log("Adding token to burn list", tokenId, user, reason);
     const newBurn = new Burn({
       tokenId,
       user,
@@ -63,8 +67,34 @@ const checkForBurns = async () => {
   console.log("Checking for tokens to burn");
 
   const tokensToBurn = await Burn.find();
+  const tokensExpired = await Token.find({
+    expirationTime: { $lte: Math.floor(Date.now() / 1000), $gt: 0 },
+  });
 
-  console.log("Amount to Burn:", tokensToBurn.length);
+  console.log("Amount of tokens to Burn:", tokensToBurn.length);
+
+  for (let i in tokensToBurn) {
+    const burnToken = tokensToBurn[i];
+    await forgeContract.methods
+      .burnToken(burnToken.tokenId, burnToken.user)
+      .send({ from: ADMIN_ADDRESS });
+    await burnToken.deleteOne();
+  }
+
+  for (let i in tokensExpired) {
+    const token = tokensExpired[i];
+
+    if (token.holders.length > 0) {
+      console.log("Token Expired!", token.tokenId);
+      await forgeContract.methods
+        .burnTokenBatch(
+          Array(token.holders.length).fill(token.tokenId),
+          token.holders
+        )
+        .send({ from: ADMIN_ADDRESS });
+      await token.deleteOne();
+    }
+  }
 };
 
 module.exports = () => {
@@ -90,7 +120,11 @@ module.exports = () => {
       });
 
       // Newly minted tokens
-      if (!existingToken && returnValues.from == ZERO_ADDRESS) {
+      if (
+        !existingToken &&
+        returnValues.from == ZERO_ADDRESS &&
+        returnValues.to !== ZERO_ADDRESS
+      ) {
         console.log(
           `New NFT collection! Creator: ${returnValues.to} Id: ${tokenId}`
         );
@@ -114,7 +148,11 @@ module.exports = () => {
         await newToken.save();
       }
       // Token Transfer to User
-      else if (existingToken && returnValues.from !== ZERO_ADDRESS) {
+      else if (
+        existingToken &&
+        returnValues.from !== ZERO_ADDRESS &&
+        returnValues.to !== ZERO_ADDRESS
+      ) {
         console.log(
           `NFT Transferred! User: ${returnValues.to} Id: ${returnValues.id}`
         );
@@ -127,6 +165,8 @@ module.exports = () => {
         if (canBurn) {
           await addToBurnList(tokenId, returnValues.to, "Min Balance");
         }
+      } else if (returnValues.to === ZERO_ADDRESS) {
+        console.log("Token Burned", tokenId, returnValues.from);
       }
     })
     .on("error", console.error);
