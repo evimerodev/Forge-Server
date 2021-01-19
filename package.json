@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index",
-    "dev": "nodemon index"
+    "dev": "nodemon index",
+    "flush":"node utils/flush"
   },
   "repository": {
     "type": "git",
@@ -20,6 +21,8 @@
   "homepage": "https://github.com/glitch46/NFTForgeHolding#readme",
   "dependencies": {
     "@truffle/hdwallet-provider": "^1.2.1",
+    "axios": "^0.21.1",
+    "colors": "^1.4.0",
     "cron": "^1.8.2",
     "dotenv": "^8.2.0",
     "mongoose": "^5.11.10",

@@ -1,5 +1,7 @@
 const HDWalletProvider = require("@truffle/hdwallet-provider");
 const Web3 = require("web3");
+const { gasStation } = require("../axios");
+require("colors");
 const CronJob = require("cron").CronJob;
 const { fromWei } = require("./utils");
 
@@ -20,7 +22,7 @@ if (process.env.NODE_ENV === "production") {
 
   ZUT_ADDRESS = "0xc0171836BA0036AD0DD24697E22BF3d2d45B45aE";
   FORGE_ADDRESS = "0x4359C08b706B6BD92E2991d7cD143C5894d1a02f";
-  ADMIN_ADDRESS = "0xb29ae9a9bf7ca2984a6a09939e49d9cf46ab0c1d";
+  ADMIN_ADDRESS = "0xd750bCe912F6074178D68B6014bc003764201803";
 } else {
   // web3 Instances
   web3 = new Web3("http://localhost:8545");
@@ -64,42 +66,61 @@ const addToBurnList = async (tokenId, user, reason) => {
 
 // Function executed by cronjob
 const checkForBurns = async () => {
-  console.log("Checking for tokens to burn");
+  const currenTime = Math.floor(Date.now() / 1000);
 
   const tokensToBurn = await Burn.find();
   const tokensExpired = await Token.find({
-    expirationTime: { $lte: Math.floor(Date.now() / 1000), $gt: 0 },
+    expirationTime: { $lte: currenTime, $gt: 0 },
   });
 
-  console.log("Amount of tokens to Burn:", tokensToBurn.length);
+  const burnIds = tokensToBurn.map((t) => t.tokenId);
+  const burnAddresses = tokensToBurn.map((t) => t.user);
 
-  for (let i in tokensToBurn) {
-    const burnToken = tokensToBurn[i];
-    await forgeContract.methods
-      .burnToken(burnToken.tokenId, burnToken.user)
-      .send({ from: ADMIN_ADDRESS });
-    await burnToken.deleteOne();
-  }
-
+  // Add Expired Tokens to burn list
   for (let i in tokensExpired) {
     const token = tokensExpired[i];
 
     if (token.holders.length > 0) {
-      console.log("Token Expired!", token.tokenId);
-      await forgeContract.methods
-        .burnTokenBatch(
-          Array(token.holders.length).fill(token.tokenId),
-          token.holders
-        )
-        .send({ from: ADMIN_ADDRESS });
-      await token.deleteOne();
+      console.log(
+        `\nToken Expired! Id:${token.tokenId} ${new Date().toLocaleString()}\n`
+          .yellow
+      );
+      token.holders.forEach((holder) => {
+        burnIds.push(token.tokenId);
+        burnAddresses.push(holder);
+      });
     }
+  }
+
+  if (burnIds.length > 0) {
+    console.log("Amount of tokens to Burn:", burnIds.length);
+
+    // Fetch fast gas price
+    const gasData = await gasStation.get();
+    const fastGasPrice = gasData.data.fast / 10;
+
+    // Execute burn in batch transaction
+    const { gasUsed } = await forgeContract.methods
+      .burnTokenBatch(burnIds, burnAddresses)
+      .send({ from: ADMIN_ADDRESS, gasPrice: fastGasPrice * 1e9 });
+
+    console.log(
+      `Burn Batch Tx Executed! Gas Used: ${gasUsed} wei. Gas Price: ${fastGasPrice} gwei`
+        .gray.inverse
+    );
+
+    // If success, empty burn collection in DB
+    await Burn.deleteMany();
+
+    // If success, delete expired tokens in DB
+    await Token.deleteMany({ expirationTime: { $lte: currenTime, $gt: 0 } });
   }
 };
 
 module.exports = () => {
   var job = new CronJob(
-    "0 */30 * * * *", // every 30 mins
+    // "0 */30 * * * *", // every 30 mins
+    "*/30 * * * * *", // every 30 sec
     checkForBurns,
     null,
     true,
@@ -112,7 +133,7 @@ module.exports = () => {
   forge.events
     .TransferSingle()
     .on("data", async ({ returnValues }) => {
-      console.log("\nNew Forge Transfer Event!");
+      // console.log("New Forge Transfer Event!");
       const tokenId = returnValues.id;
 
       const existingToken = await Token.findOne({
@@ -126,7 +147,8 @@ module.exports = () => {
         returnValues.to !== ZERO_ADDRESS
       ) {
         console.log(
-          `New NFT collection! Creator: ${returnValues.to} Id: ${tokenId}`
+          `\n New NFT collection! Creator: ${returnValues.to} Id: ${tokenId} Amount:${returnValues.value} \n`
+            .green.inverse
         );
 
         const expiration = await forge.methods.expirations(tokenId).call();
@@ -154,19 +176,24 @@ module.exports = () => {
         returnValues.to !== ZERO_ADDRESS
       ) {
         console.log(
-          `NFT Transferred! User: ${returnValues.to} Id: ${returnValues.id}`
+          `NFT Transferred! User: ${returnValues.to} Id: ${returnValues.id} `
         );
-        existingToken.holders.push(returnValues.to);
-        await existingToken.save();
 
         const canBurn = await forge.methods
           .canBurn(tokenId, returnValues.to)
           .call();
         if (canBurn) {
           await addToBurnList(tokenId, returnValues.to, "Min Balance");
+        } else {
+          // add holder if was not burned
+          existingToken.holders.push(returnValues.to);
+          await existingToken.save();
         }
       } else if (returnValues.to === ZERO_ADDRESS) {
-        console.log("Token Burned", tokenId, returnValues.from);
+        console.log(
+          `\n Token Burned Id:${tokenId} User:${returnValues.from} \n`.red
+            .inverse
+        );
       }
     })
     .on("error", console.error);
@@ -200,6 +227,12 @@ module.exports = () => {
                 returnValues.from,
                 "Min Balance"
               );
+
+              // Remove user from token holders, as its already on burn list
+              token.holders = token.holders.filter(
+                (holder) => holder != returnValues.from.toLowerCase()
+              );
+              await token.save();
             }
           }
         }
