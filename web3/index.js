@@ -119,8 +119,8 @@ const checkForBurns = async () => {
 
 module.exports = () => {
   var job = new CronJob(
-    // "0 */30 * * * *", // every 30 mins
-    "*/30 * * * * *", // every 30 sec
+    "0 */30 * * * *", // every 30 mins
+    // "*/30 * * * * *", // every 30 sec
     checkForBurns,
     null,
     true,
