@@ -18,7 +18,14 @@ if (process.env.NODE_ENV === "production") {
 
   // web3 Instances
   web3 = new Web3(provider);
-  web3Ws = new Web3(`wss://rinkeby.infura.io/ws/v3/${process.env.INFURA_KEY}`);
+  web3Ws = new Web3(`wss://rinkeby.infura.io/ws/v3/${process.env.INFURA_KEY}`, {
+    reconnect: {
+      auto: true,
+      delay: 5000, // ms
+      maxAttempts: 5,
+      onTimeout: false,
+    },
+  });
 
   ZUT_ADDRESS = "0x487D429BF793D855B7680388d4451dF726157C18";
   FORGE_ADDRESS = "0xC9844e4264C9785012A4a0f5ee8eE7F789D2D7B7";
@@ -48,72 +55,81 @@ const Burn = require("../models/Burn");
 
 // Helper function to add tokens to burn list
 const addToBurnList = async (tokenId, user, reason) => {
-  const existingBurn = await Burn.findOne({
-    tokenId,
-    user,
-  });
-
-  if (!existingBurn) {
-    console.log("Adding token to burn list", tokenId, user, reason);
-    const newBurn = new Burn({
+  try {
+    const existingBurn = await Burn.findOne({
       tokenId,
       user,
-      reason,
     });
-    await newBurn.save();
+
+    if (!existingBurn) {
+      console.log("Adding token to burn list", tokenId, user, reason);
+      const newBurn = new Burn({
+        tokenId,
+        user,
+        reason,
+      });
+      await newBurn.save();
+    }
+  } catch (error) {
+    console.error(error.message);
   }
 };
 
 // Function executed by cronjob
 const checkForBurns = async () => {
-  const currenTime = Math.floor(Date.now() / 1000);
+  try {
+    const currenTime = Math.floor(Date.now() / 1000);
 
-  const tokensToBurn = await Burn.find();
-  const tokensExpired = await Token.find({
-    expirationTime: { $lte: currenTime, $gt: 0 },
-  });
+    const tokensToBurn = await Burn.find();
+    const tokensExpired = await Token.find({
+      expirationTime: { $lte: currenTime, $gt: 0 },
+    });
 
-  const burnIds = tokensToBurn.map((t) => t.tokenId);
-  const burnAddresses = tokensToBurn.map((t) => t.user);
+    const burnIds = tokensToBurn.map((t) => t.tokenId);
+    const burnAddresses = tokensToBurn.map((t) => t.user);
 
-  // Add Expired Tokens to burn list
-  for (let i in tokensExpired) {
-    const token = tokensExpired[i];
+    // Add Expired Tokens to burn list
+    for (let i in tokensExpired) {
+      const token = tokensExpired[i];
 
-    if (token.holders.length > 0) {
-      console.log(
-        `\nToken Expired! Id:${token.tokenId} ${new Date().toLocaleString()}\n`
-          .yellow
-      );
-      token.holders.forEach((holder) => {
-        burnIds.push(token.tokenId);
-        burnAddresses.push(holder);
-      });
+      if (token.holders.length > 0) {
+        console.log(
+          `\nToken Expired! Id:${
+            token.tokenId
+          } ${new Date().toLocaleString()}\n`.yellow
+        );
+        token.holders.forEach((holder) => {
+          burnIds.push(token.tokenId);
+          burnAddresses.push(holder);
+        });
+      }
     }
-  }
 
-  if (burnIds.length > 0) {
-    console.log("Amount of tokens to Burn:", burnIds.length);
+    if (burnIds.length > 0) {
+      console.log("Amount of tokens to Burn:", burnIds.length);
 
-    // Fetch fast gas price
-    const gasData = await gasStation.get();
-    const fastGasPrice = gasData.data.fast / 10;
+      // Fetch fast gas price
+      const gasData = await gasStation.get();
+      const fastGasPrice = gasData.data.fast / 10;
 
-    // Execute burn in batch transaction
-    const { gasUsed } = await forgeContract.methods
-      .burnTokenBatch(burnIds, burnAddresses)
-      .send({ from: ADMIN_ADDRESS, gasPrice: fastGasPrice * 1e9 });
+      // Execute burn in batch transaction
+      const { gasUsed } = await forgeContract.methods
+        .burnTokenBatch(burnIds, burnAddresses)
+        .send({ from: ADMIN_ADDRESS, gasPrice: fastGasPrice * 1e9 });
 
-    console.log(
-      `Burn Batch Tx Executed! Gas Used: ${gasUsed} wei. Gas Price: ${fastGasPrice} gwei`
-        .gray.inverse
-    );
+      console.log(
+        `Burn Batch Tx Executed! Gas Used: ${gasUsed} wei. Gas Price: ${fastGasPrice} gwei`
+          .gray.inverse
+      );
 
-    // If success, empty burn collection in DB
-    await Burn.deleteMany();
+      // If success, empty burn collection in DB
+      await Burn.deleteMany();
 
-    // If success, delete expired tokens in DB
-    await Token.deleteMany({ expirationTime: { $lte: currenTime, $gt: 0 } });
+      // If success, delete expired tokens in DB
+      await Token.deleteMany({ expirationTime: { $lte: currenTime, $gt: 0 } });
+    }
+  } catch (error) {
+    console.error(error.message);
   }
 };
 
@@ -196,7 +212,7 @@ module.exports = () => {
         );
       }
     })
-    .on("error", console.error);
+    .on("error", (e) => console.error(e.message));
 
   // Listen to ZUT Transfer events
   zut.events
@@ -238,5 +254,5 @@ module.exports = () => {
         }
       }
     })
-    .on("error", console.error);
+    .on("error", (e) => console.error(e.message));
 };
