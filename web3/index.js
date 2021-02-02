@@ -35,7 +35,7 @@ const forgeAbi = require("./forgeAbi");
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 // Contract Instances
-const zut = new web3Ws.eth.Contract(erc20Abi, ZUT_ADDRESS);
+const zut = new web3.eth.Contract(erc20Abi, ZUT_ADDRESS);
 const forge = new web3.eth.Contract(forgeAbi, FORGE_ADDRESS);
 
 // Mongoose Models
