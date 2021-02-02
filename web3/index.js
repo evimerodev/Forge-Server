@@ -53,6 +53,8 @@ const forgeContract = new web3.eth.Contract(forgeAbi, FORGE_ADDRESS);
 const Token = require("../models/Token");
 const Burn = require("../models/Burn");
 
+let fromBlock = 8002804;
+
 // Helper function to add tokens to burn list
 const addToBurnList = async (tokenId, user, reason) => {
   try {
@@ -78,7 +80,127 @@ const addToBurnList = async (tokenId, user, reason) => {
 // Function executed by cronjob
 const checkForBurns = async () => {
   try {
+    const toBlock = await web3.eth.getBlock("latest");
     const currenTime = Math.floor(Date.now() / 1000);
+
+    // FORGE TRANSFER EVENTS
+    const forgeEvents = await forge.getPastEvents("TransferSingle", {
+      fromBlock,
+      toBlock,
+    });
+
+    for (let i = 0; i < forgeEvents.length; i++) {
+      const { returnValues } = forgeEvents[i];
+      const tokenId = returnValues.id;
+
+      // Newly minted tokens
+      if (
+        returnValues.from == ZERO_ADDRESS &&
+        returnValues.to !== ZERO_ADDRESS
+      ) {
+        console.log(
+          `\n New NFT collection! Creator: ${returnValues.to} Id: ${tokenId} Amount:${returnValues.value} \n`
+            .green.inverse
+        );
+
+        const expiration = await forge.methods.expirations(tokenId).call();
+        const amount = await forge.methods.minBalances(tokenId).call();
+        const tokenAddress = await forge.methods
+          .tokenMinBalances(tokenId)
+          .call();
+
+        const newToken = new Token({
+          tokenId,
+          creator: returnValues.to,
+          amount: returnValues.value,
+          expirationTime: Number(expiration),
+          minBalance: {
+            tokenAddress,
+            amount,
+          },
+        });
+        await newToken.save();
+      }
+      // Token Transfer to User
+      else if (
+        returnValues.from !== ZERO_ADDRESS &&
+        returnValues.to !== ZERO_ADDRESS
+      ) {
+        const existingToken = await Token.findOne({
+          tokenId,
+        });
+
+        if (!existingToken) continue;
+
+        console.log(
+          `NFT Transferred! User: ${returnValues.to} Id: ${returnValues.id} `
+        );
+
+        const canBurn = await forge.methods
+          .canBurn(tokenId, returnValues.to)
+          .call();
+        if (canBurn) {
+          await addToBurnList(tokenId, returnValues.to, "Min Balance");
+        } else {
+          // add holder if was not burned
+          existingToken.holders.push(returnValues.to);
+          await existingToken.save();
+        }
+      } else if (returnValues.to === ZERO_ADDRESS) {
+        console.log(
+          `\n Token Burned Id:${tokenId} User:${returnValues.from} \n`.red
+            .inverse
+        );
+      }
+    }
+
+    // ZUT TRANSFER EVENTS
+    const zutEvents = await zut.getPastEvents("Transfer", {
+      fromBlock,
+      toBlock,
+    });
+
+    for (let i = 0; i < zutEvents.length; i++) {
+      const { returnValues } = zutEvents[i];
+      const tokenId = returnValues.id;
+
+      // Find tokens that user "from" is involved with
+      const tokens = await Token.find({
+        holders: { $all: [returnValues.from.toLowerCase()] },
+      });
+
+      // Newly minted tokens
+      if (tokens.length > 0) {
+        for (let i in tokens) {
+          const token = tokens[i];
+          if (
+            token.minBalance.tokenAddress.toLowerCase() ==
+            ZUT_ADDRESS.toLowerCase()
+          ) {
+            const canBurn = await forge.methods
+              .canBurn(tokenId, returnValues.from)
+              .call();
+
+            if (canBurn) {
+              await addToBurnList(
+                token.tokenId,
+                returnValues.from,
+                "Min Balance"
+              );
+
+              // Remove user from token holders, as its already on burn list
+              token.holders = token.holders.filter(
+                (holder) => holder != returnValues.from.toLowerCase()
+              );
+              await token.save();
+            }
+          }
+        }
+      }
+    }
+
+    // update block number for next job
+    fromBlock = toBlock;
 
     const tokensToBurn = await Burn.find();
     const tokensExpired = await Token.find({
@@ -144,115 +266,4 @@ module.exports = () => {
   );
   job.start();
   console.log("Cronjob started!");
-
-  // Listen to Forge Transfer events
-  forge.events
-    .TransferSingle()
-    .on("data", async ({ returnValues }) => {
-      // console.log("New Forge Transfer Event!");
-      const tokenId = returnValues.id;
-
-      const existingToken = await Token.findOne({
-        tokenId,
-      });
-
-      // Newly minted tokens
-      if (
-        !existingToken &&
-        returnValues.from == ZERO_ADDRESS &&
-        returnValues.to !== ZERO_ADDRESS
-      ) {
-        console.log(
-          `\n New NFT collection! Creator: ${returnValues.to} Id: ${tokenId} Amount:${returnValues.value} \n`
-            .green.inverse
-        );
-
-        const expiration = await forge.methods.expirations(tokenId).call();
-        const amount = await forge.methods.minBalances(tokenId).call();
-        const tokenAddress = await forge.methods
-          .tokenMinBalances(tokenId)
-          .call();
-
-        const newToken = new Token({
-          tokenId,
-          creator: returnValues.to,
-          amount: returnValues.value,
-          expirationTime: Number(expiration),
-          minBalance: {
-            tokenAddress,
-            amount,
-          },
-        });
-        await newToken.save();
-      }
-      // Token Transfer to User
-      else if (
-        existingToken &&
-        returnValues.from !== ZERO_ADDRESS &&
-        returnValues.to !== ZERO_ADDRESS
-      ) {
-        console.log(
-          `NFT Transferred! User: ${returnValues.to} Id: ${returnValues.id} `
-        );
-
-        const canBurn = await forge.methods
-          .canBurn(tokenId, returnValues.to)
-          .call();
-        if (canBurn) {
-          await addToBurnList(tokenId, returnValues.to, "Min Balance");
-        } else {
-          // add holder if was not burned
-          existingToken.holders.push(returnValues.to);
-          await existingToken.save();
-        }
-      } else if (returnValues.to === ZERO_ADDRESS) {
-        console.log(
-          `\n Token Burned Id:${tokenId} User:${returnValues.from} \n`.red
-            .inverse
-        );
-      }
-    })
-    .on("error", (e) => console.error(e.message));
-
-  // Listen to ZUT Transfer events
-  zut.events
-    .Transfer()
-    .on("data", async ({ returnValues }) => {
-      console.log("\nNew ZUT Transfer Event!");
-
-      // Find tokens that user "from" is involved with
-      const tokens = await Token.find({
-        holders: { $all: [returnValues.from.toLowerCase()] },
-      });
-
-      // Newly minted tokens
-      if (tokens.length > 0) {
-        for (let i in tokens) {
-          const token = tokens[i];
-          if (
-            token.minBalance.tokenAddress.toLowerCase() ==
-            ZUT_ADDRESS.toLowerCase()
-          ) {
-            const canBurn = await forge.methods
-              .canBurn(tokenId, returnValues.from)
-              .call();
-
-            if (canBurn) {
-              await addToBurnList(
-                token.tokenId,
-                returnValues.from,
-                "Min Balance"
-              );
-
-              // Remove user from token holders, as its already on burn list
-              token.holders = token.holders.filter(
-                (holder) => holder != returnValues.from.toLowerCase()
-              );
-              await token.save();
-            }
-          }
-        }
-      }
-    })
-    .on("error", (e) => console.error(e.message));
 };
