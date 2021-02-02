@@ -10,7 +10,16 @@ const provider = new HDWalletProvider(
 // web3 Instances
 const web3 = new Web3(provider);
 const web3Ws = new Web3(
-  `wss://rinkeby.infura.io/ws/v3/${process.env.INFURA_KEY}`
+  `wss://rinkeby.infura.io/ws/v3/${process.env.INFURA_KEY}`,
+  {
+    // Enable auto reconnection
+    reconnect: {
+      auto: true,
+      delay: 5000, // ms
+      maxAttempts: 5,
+      onTimeout: false,
+    },
+  }
 );
 
 const erc20Abi = require("./erc20Abi");
@@ -71,7 +80,7 @@ module.exports = () => {
         await existingToken.save();
       }
     })
-    .on("error", console.error);
+    .on("error", (e) => console.error(e.message));
 
   zut.events
     .Transfer()
@@ -105,5 +114,5 @@ module.exports = () => {
         }
       }
     })
-    .on("error", console.error);
+    .on("error", (e) => console.error(e.message));
 };
