@@ -18,21 +18,12 @@ if (process.env.NODE_ENV === "production") {
 
   // web3 Instances
   web3 = new Web3(provider);
-  web3Ws = new Web3(`wss://rinkeby.infura.io/ws/v3/${process.env.INFURA_KEY}`, {
-    reconnect: {
-      auto: true,
-      delay: 5000, // ms
-      maxAttempts: 5,
-      onTimeout: false,
-    },
-  });
   ZUT_ADDRESS = "0x487D429BF793D855B7680388d4451dF726157C18";
   FORGE_ADDRESS = "0xC9844e4264C9785012A4a0f5ee8eE7F789D2D7B7";
   ADMIN_ADDRESS = "0xd750bCe912F6074178D68B6014bc003764201803";
 } else {
   // web3 Instances
   web3 = new Web3("http://localhost:8545");
-  web3Ws = new Web3(`ws://localhost:8545`);
 
   ZUT_ADDRESS = "0xC89Ce4735882C9F0f0FE26686c53074E09B0D550";
   FORGE_ADDRESS = "0xe982E462b094850F12AF94d21D470e21bE9D0E9C";
@@ -45,8 +36,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 // Contract Instances
 const zut = new web3Ws.eth.Contract(erc20Abi, ZUT_ADDRESS);
-const forge = new web3Ws.eth.Contract(forgeAbi, FORGE_ADDRESS);
-const forgeContract = new web3.eth.Contract(forgeAbi, FORGE_ADDRESS);
+const forge = new web3.eth.Contract(forgeAbi, FORGE_ADDRESS);
 
 // Mongoose Models
 const Token = require("../models/Token");
