@@ -3,8 +3,6 @@ const mongoose = require("mongoose");
 
 const startWeb3 = require("./web3");
 
-const Token = require("./models/Token");
-
 const start = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI, {
@@ -15,7 +13,7 @@ const start = async () => {
     });
     console.log("MongoDB connected...");
 
-    await startWeb3();
+    startWeb3();
     console.log("Web3 started...");
   } catch (e) {
     console.log(e.message);
