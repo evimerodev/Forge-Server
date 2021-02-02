@@ -6,9 +6,9 @@
   "scripts": {
     "start": "node index",
     "dev": "nodemon index",
-    "flush":"node utils/flush",
-    "reset":"git fetch && git pull && npm start",
-    "publish":"git push heroku main:master"
+    "flush": "node utils/flush",
+    "reset": "git fetch && git pull && npm start",
+    "publish": "git push heroku main:master"
   },
   "repository": {
     "type": "git",

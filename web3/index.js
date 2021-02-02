@@ -51,40 +51,22 @@ const forgeContract = new web3.eth.Contract(forgeAbi, FORGE_ADDRESS);
 // Mongoose Models
 const Token = require("../models/Token");
 const Burn = require("../models/Burn");
-
-let fromBlock = 8002804;
-
-// Helper function to add tokens to burn list
-const addToBurnList = async (tokenId, user, reason) => {
-  try {
-    const existingBurn = await Burn.findOne({
-      tokenId,
-      user,
-    });
-
-    if (!existingBurn) {
-      console.log("Adding token to burn list", tokenId, user, reason);
-      const newBurn = new Burn({
-        tokenId,
-        user,
-        reason,
-      });
-      await newBurn.save();
-    }
-  } catch (error) {
-    console.error(error.message);
-  }
-};
+const Info = require("../models/Info");
 
 // Function executed by cronjob
 const checkForBurns = async () => {
   try {
-    const toBlock = await web3.eth.getBlock("latest");
+    const info = (await Info.find())[0];
+    const toBlock = await web3.eth.getBlockNumber();
     const currenTime = Math.floor(Date.now() / 1000);
+
+    const tokensToBurn = await Burn.find();
+    const burnIds = tokensToBurn.map((t) => t.tokenId);
+    const burnAddresses = tokensToBurn.map((t) => t.user);
 
     // FORGE TRANSFER EVENTS
     const forgeEvents = await forge.getPastEvents("TransferSingle", {
-      fromBlock,
+      fromBlock: info.lastBlock,
       toBlock,
     });
 
@@ -120,7 +102,7 @@ const checkForBurns = async () => {
         });
         await newToken.save();
       }
-      // Token Transfer to User
+      // Token Transfers to User
       else if (
         returnValues.from !== ZERO_ADDRESS &&
         returnValues.to !== ZERO_ADDRESS
@@ -139,7 +121,9 @@ const checkForBurns = async () => {
           .canBurn(tokenId, returnValues.to)
           .call();
         if (canBurn) {
-          await addToBurnList(tokenId, returnValues.to, "Min Balance");
+          burnIds.push(tokenId);
+          burnAddresses.push(returnValues.to);
+          // await addToBurnList(tokenId, returnValues.to, "Min Balance");
         } else {
           // add holder if was not burned
           existingToken.holders.push(returnValues.to);
@@ -147,7 +131,7 @@ const checkForBurns = async () => {
         }
       } else if (returnValues.to === ZERO_ADDRESS) {
         console.log(
-          `\n Token Burned Id:${tokenId} User:${returnValues.from} \n`.red
+          `\n Token Burned Id: ${tokenId} User: ${returnValues.from} \n`.red
             .inverse
         );
       }
@@ -155,13 +139,12 @@ const checkForBurns = async () => {
 
     // ZUT TRANSFER EVENTS
     const zutEvents = await zut.getPastEvents("Transfer", {
-      fromBlock,
+      fromBlock: info.lastBlock,
       toBlock,
     });
 
     for (let i = 0; i < zutEvents.length; i++) {
       const { returnValues } = zutEvents[i];
-      const tokenId = returnValues.id;
 
       // Find tokens that user "from" is involved with
       const tokens = await Token.find({
@@ -181,11 +164,14 @@ const checkForBurns = async () => {
               .call();
 
             if (canBurn) {
-              await addToBurnList(
-                token.tokenId,
-                returnValues.from,
-                "Min Balance"
-              );
+              // await addToBurnList(
+              //   token.tokenId,
+              //   returnValues.from,
+              //   "Min Balance"
+              // );
+
+              burnIds.push(token.tokenId);
+              burnAddresses.push(returnValues.from);
 
               // Remove user from token holders, as its already on burn list
               token.holders = token.holders.filter(
@@ -198,16 +184,10 @@ const checkForBurns = async () => {
       }
     }
 
-    // update block number for next job
-    fromBlock = toBlock;
-
-    const tokensToBurn = await Burn.find();
+    // const tokensToBurn = await Burn.find();
     const tokensExpired = await Token.find({
       expirationTime: { $lte: currenTime, $gt: 0 },
     });
-
-    const burnIds = tokensToBurn.map((t) => t.tokenId);
-    const burnAddresses = tokensToBurn.map((t) => t.user);
 
     // Add Expired Tokens to burn list
     for (let i in tokensExpired) {
@@ -226,7 +206,14 @@ const checkForBurns = async () => {
       }
     }
 
+    // Burn tokens!!
     if (burnIds.length > 0) {
+      // If too many tokens for burning, leave some for later
+      if (burnIds.length > info.maxBurns) {
+        burnIds = burnIds.slice(0, info.maxBurns);
+        burnAddresses = burnAddresses.slice(0, info.maxBurns);
+      }
+
       console.log("Amount of tokens to Burn:", burnIds.length);
 
       // Fetch fast gas price
@@ -238,26 +225,35 @@ const checkForBurns = async () => {
         .burnTokenBatch(burnIds, burnAddresses)
         .send({ from: ADMIN_ADDRESS, gasPrice: fastGasPrice * 1e9 });
 
+      info.ethSpent += (Number(gasUsed) * fastGasPrice) / 1e9;
+      info.totalBurned += burnIds.length;
+
       console.log(
         `Burn Batch Tx Executed! Gas Used: ${gasUsed} wei. Gas Price: ${fastGasPrice} gwei`
           .gray.inverse
       );
 
-      // If success, empty burn collection in DB
-      await Burn.deleteMany();
-
-      // If success, delete expired tokens in DB
-      await Token.deleteMany({ expirationTime: { $lte: currenTime, $gt: 0 } });
+      // If success, delete only tokens burned that expired
+      await Token.deleteMany({
+        tokenId: { $in: burnIds },
+        expirationTime: { $lte: currenTime, $gt: 0 },
+      });
+      await Burn.deleteMany({ tokenId: { $in: burnIds } });
     }
+
+    // update block number for next job
+    info.lastBlock = toBlock + 1;
+    await info.save();
   } catch (error) {
+    console.log(error);
     console.error(error.message);
   }
 };
 
 module.exports = () => {
   var job = new CronJob(
-    "0 */5 * * * *", // every 5 mins
-    // "*/30 * * * * *", // every 30 sec
+    // "0 */5 * * * *", // every 5 mins
+    "*/15 * * * * *", // every 15 sec
     checkForBurns,
     null,
     true,
