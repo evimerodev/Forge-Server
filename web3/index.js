@@ -74,6 +74,12 @@ const checkForBurns = async () => {
             .green.inverse
         );
 
+        const existingToken = await Token.findOne({
+          tokenId,
+        });
+
+        if (existingToken) continue;
+
         const expiration = await forge.methods.expirations(tokenId).call();
         const amount = await forge.methods.minBalances(tokenId).call();
         const tokenAddress = await forge.methods
@@ -211,7 +217,7 @@ const checkForBurns = async () => {
       const fastGasPrice = gasData.data.fast / 10;
 
       // Execute burn in batch transaction
-      const { gasUsed } = await forgeContract.methods
+      const { gasUsed } = await forge.methods
         .burnTokenBatch(burnIds, burnAddresses)
         .send({ from: ADMIN_ADDRESS, gasPrice: fastGasPrice * 1e9 });
 
