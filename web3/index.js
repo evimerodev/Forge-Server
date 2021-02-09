@@ -242,7 +242,7 @@ const checkForBurns = async () => {
     await info.save();
   } catch (error) {
     console.log(error);
-    console.error(error.message);
+    process.exit(1);
   }
 };
 
