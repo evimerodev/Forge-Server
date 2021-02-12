@@ -2,8 +2,10 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 
 const startWeb3 = require("./web3");
+const retryInterval = 10000;
+const maxRetryCount = 5;
 
-const start = async () => {
+const start = async (retryCount) => {
   try {
     await mongoose.connect(process.env.MONGO_URI, {
       useNewUrlParser: true,
@@ -16,9 +18,15 @@ const start = async () => {
     startWeb3();
     console.log("Web3 started...");
   } catch (e) {
-    console.log(e.message);
-    process.exit(1); // kill process if could not connect to mongoDB
+    if (retryCount) {
+      retryCount = retryCount - 1;
+      setTimeout(() => { start(retryCount) }, retryInterval);
+    }
+    else {
+      console.log(e.message);
+      process.exit(1); // kill process if could not connect to mongoDB
+    }
   }
 };
 
-start();
+start(maxRetryCount);
