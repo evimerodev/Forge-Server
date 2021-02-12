@@ -246,11 +246,23 @@ const checkForBurns = async () => {
   }
 };
 
+const checkForBurnsWithServerCrash = async () => {
+  try {
+    console.log("checkForBurns is called");
+    //Any exception here will 
+    throw new error();
+  } catch (error) {
+    console.log(error);
+    //By commenting following line will prevent server crash and cron job will continue working.
+    process.exit(1);
+  }
+}
+
 module.exports = () => {
   var job = new CronJob(
     "0 */1 * * * *", // every 1 min
     // "*/15 * * * * *", // every 15 sec
-    checkForBurns,
+    checkForBurnsWithServerCrash,
     null,
     true,
     "America/Los_Angeles"
