@@ -259,8 +259,7 @@ const checkForBurns = async () => {
 
 module.exports = () => {
   var job = new CronJob(
-    "0 */1 * * * *", // every 1 min
-    // "*/15 * * * * *", // every 15 sec
+    `0 */${process.env.CRON_INTERVAL} * * * *`, // every INTERVAL minutes
     checkForBurns,
     null,
     true,
