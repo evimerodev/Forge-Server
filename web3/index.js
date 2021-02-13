@@ -1,38 +1,39 @@
+const CronJob = require("cron").CronJob;
 const HDWalletProvider = require("@truffle/hdwallet-provider");
 const Web3 = require("web3");
 const { gasStation } = require("../axios");
 require("colors");
-const CronJob = require("cron").CronJob;
-const { fromWei } = require("./utils");
 
-let web3, web3Ws;
-
-let ZUT_ADDRESS, FORGE_ADDRESS, ADMIN_ADDRESS;
+let web3;
+let ZUT_ADDRESS, FORGE_ADDRESS;
+const ADMIN_ADDRESS = "0x5336fC5d057d422c8b7B51CD50285fce0b81196D";
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 console.log(`Server running in ${process.env.NODE_ENV} mode`);
 if (process.env.NODE_ENV === "production") {
-  const provider = new HDWalletProvider(
-    process.env.PRIVATE_KEY,
-    `https://rinkeby.infura.io/v3/${process.env.INFURA_KEY}`
-  );
-
   // web3 Instances
+  const provider = new HDWalletProvider(
+    process.env.MATIC_PRIVATE_KEY,
+    "https://rpc-mainnet.maticvigil.com/"
+  );
   web3 = new Web3(provider);
+
   ZUT_ADDRESS = "0x487D429BF793D855B7680388d4451dF726157C18";
   FORGE_ADDRESS = "0xC9844e4264C9785012A4a0f5ee8eE7F789D2D7B7";
-  ADMIN_ADDRESS = "0xd750bCe912F6074178D68B6014bc003764201803";
 } else {
   // web3 Instances
-  web3 = new Web3("http://localhost:8545");
+  const provider = new HDWalletProvider(
+    process.env.MATIC_PRIVATE_KEY,
+    "https://rpc-mumbai.matic.today"
+  );
+  web3 = new Web3(provider);
 
-  ZUT_ADDRESS = "0xC89Ce4735882C9F0f0FE26686c53074E09B0D550";
-  FORGE_ADDRESS = "0xe982E462b094850F12AF94d21D470e21bE9D0E9C";
-  ADMIN_ADDRESS = "0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1";
+  ZUT_ADDRESS = "0x2bAb96D1D3Fafcd5185d69a53D24925fc8163E40";
+  FORGE_ADDRESS = "0xA3d85039287FcC632e060EDFc82B422Cd5cDe99f";
 }
 
 const erc20Abi = require("./erc20Abi");
 const forgeAbi = require("./forgeAbi");
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 // Contract Instances
 const zut = new web3.eth.Contract(erc20Abi, ZUT_ADDRESS);
@@ -154,9 +155,10 @@ const checkForBurns = async () => {
           for (let i in tokens) {
             const token = tokens[i];
             if (
-              token.minBalance && token.minBalance.tokenAddress &&
+              token.minBalance &&
+              token.minBalance.tokenAddress &&
               token.minBalance.tokenAddress.toLowerCase() ==
-              ZUT_ADDRESS.toLowerCase()
+                ZUT_ADDRESS.toLowerCase()
             ) {
               const canBurn = await forge.methods
                 .canBurn(tokenId, returnValues.from)
@@ -194,8 +196,9 @@ const checkForBurns = async () => {
 
         if (token.holders && token.holders.length > 0) {
           console.log(
-            `\nToken Expired! Id:${token.tokenId
-              } ${new Date().toLocaleString()}\n`.yellow
+            `\nToken Expired! Id:${
+              token.tokenId
+            } ${new Date().toLocaleString()}\n`.yellow
           );
           token.holders.forEach((holder) => {
             burnIds.push(token.tokenId);
