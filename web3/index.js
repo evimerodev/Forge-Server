@@ -1,36 +1,26 @@
+require("dotenv").config();
 const CronJob = require("cron").CronJob;
 const HDWalletProvider = require("@truffle/hdwallet-provider");
 const Web3 = require("web3");
 const { gasStation } = require("../axios");
 require("colors");
 
-let web3;
-let ZUT_ADDRESS, FORGE_ADDRESS;
-const ADMIN_ADDRESS = "0x5336fC5d057d422c8b7B51CD50285fce0b81196D";
+
+let FORGE_ADDRESS = process.env.FORGE_ADDRESS;
+let ZUT_ADDRESS = process.env.ZUT_ADDRESS;
+let ADMIN_ADDRESS = process.env.ADMIN_ADDRESS;
+const ADMIN_PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY;
+const RPC_PROVIDER = process.env.RPC_PROVIDER;
+const CRON_INTERVAL = process.env.CRON_INTERVAL;
+
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 console.log(`Server running in ${process.env.NODE_ENV} mode`);
-if (process.env.NODE_ENV === "production") {
-  // web3 Instances
-  const provider = new HDWalletProvider(
-    process.env.MATIC_PRIVATE_KEY,
-    "https://rpc-mainnet.maticvigil.com/"
-  );
-  web3 = new Web3(provider);
-
-  ZUT_ADDRESS = "0x487D429BF793D855B7680388d4451dF726157C18";
-  FORGE_ADDRESS = "0xC9844e4264C9785012A4a0f5ee8eE7F789D2D7B7";
-} else {
-  // web3 Instances
-  const provider = new HDWalletProvider(
-    process.env.MATIC_PRIVATE_KEY,
-    "https://rpc-mumbai.matic.today"
-  );
-  web3 = new Web3(provider);
-
-  ZUT_ADDRESS = "0x2bAb96D1D3Fafcd5185d69a53D24925fc8163E40";
-  FORGE_ADDRESS = "0xA3d85039287FcC632e060EDFc82B422Cd5cDe99f";
-}
+const provider = new HDWalletProvider(
+  ADMIN_PRIVATE_KEY,
+  RPC_PROVIDER,
+);
+const web3 = new Web3(provider);
 
 const erc20Abi = require("./erc20Abi");
 const forgeAbi = require("./forgeAbi");
@@ -259,7 +249,7 @@ const checkForBurns = async () => {
 
 module.exports = () => {
   var job = new CronJob(
-    `0 */${process.env.CRON_INTERVAL} * * * *`, // every INTERVAL minutes
+    `0 */${CRON_INTERVAL} * * * *`, // every INTERVAL minutes
     checkForBurns,
     null,
     true,
