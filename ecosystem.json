@@ -27,7 +27,7 @@
             ],
             "ref": "origin/main",
             "repo": "git@github.com:glitch46/Forge-Server.git",
-            "path": "/home/ubuntu/repos/nft-forge-server",
+            "path": "/home/ubuntu/repos/Forge-Server",
             "post-deploy": "npm install && pm2 reload nft-forge-service --update-env"
         },
         "matic_mainnet": {
@@ -37,7 +37,7 @@
             ],
             "ref": "origin/main",
             "repo": "git@github.com:glitch46/Forge-Server.git",
-            "path": "/home/ubuntu/repos/nft-forge-server",
+            "path": "/home/ubuntu/repos/Forge-Server",
             "post-deploy": "npm install && pm2 reload nft-forge-service --update-env"
         }
     }
