@@ -1,0 +1,44 @@
+{
+    "apps": [
+        {
+            "name": "nft-forge-service",
+            "script": "index.js",
+            "instances": 1,
+            "max_memory_restart": "1024M",
+            "env": {
+                "NODE_ENV": "development",
+                "NODE_PATH": "."
+            },
+            "env_production": {
+                "NODE_ENV": "production",
+                "NODE_PATH": "."
+            },
+            "env_staging": {
+                "NODE_ENV": "staging",
+                "NODE_PATH": "."
+            }
+        }
+    ],
+    "deploy": {
+        "matic_testnet": {
+            "user": "ubuntu",
+            "host": [
+                "nft-forge-matic-testnet"
+            ],
+            "ref": "origin/main",
+            "repo": "git@github.com:glitch46/Forge-Server.git",
+            "path": "/home/ubuntu/repos/nft-forge-server",
+            "post-deploy": "npm install && pm2 reload nft-forge-service --update-env"
+        },
+        "matic_mainnet": {
+            "user": "ubuntu",
+            "host": [
+                "nft-forge-matic-mainnet"
+            ],
+            "ref": "origin/main",
+            "repo": "git@github.com:glitch46/Forge-Server.git",
+            "path": "/home/ubuntu/repos/nft-forge-server",
+            "post-deploy": "npm install && pm2 reload nft-forge-service --update-env"
+        }
+    }
+}
