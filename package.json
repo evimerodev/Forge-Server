@@ -1,11 +1,12 @@
 {
-  "name": "NFTForgeHolding",
+  "name": "nft_forge_holding",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
     "start": "node index",
     "dev": "nodemon index",
+    "init": "node utils/addInfo && npm run flush",
     "flush": "node utils/flush",
     "reset": "git fetch && git pull && npm start",
     "publish": "git push heroku main:master"

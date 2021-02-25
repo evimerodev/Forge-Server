@@ -13,8 +13,10 @@ const add = async () => {
       useUnifiedTopology: true,
     });
 
+    await Info.deleteMany({});
+
     const info = new Info({
-      lastBlock: 7935864,
+      lastBlock: 11235750,
       totalBurned: 0,
       gasSpent: 0,
       maxBurns: 20,
