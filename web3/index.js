@@ -13,7 +13,7 @@ console.log(`Server running in ${process.env.NODE_ENV} mode`);
 if (process.env.NODE_ENV === "production") {
   // web3 Instances
   const provider = new HDWalletProvider(
-    process.env.MATIC_PRIVATE_KEY,
+    process.env.ADMIN_PRIVATE_KEY,
     "https://rpc-mainnet.maticvigil.com/"
   );
   web3 = new Web3(provider);
@@ -23,7 +23,7 @@ if (process.env.NODE_ENV === "production") {
 } else {
   // web3 Instances
   const provider = new HDWalletProvider(
-    process.env.MATIC_PRIVATE_KEY,
+    process.env.ADMIN_PRIVATE_KEY,
     "https://rpc-mumbai.matic.today"
   );
   web3 = new Web3(provider);
@@ -32,8 +32,10 @@ if (process.env.NODE_ENV === "production") {
   FORGE_ADDRESS = "0xA3d85039287FcC632e060EDFc82B422Cd5cDe99f";
 }
 
-const erc20Abi = require("./erc20Abi");
-const forgeAbi = require("./forgeAbi");
+// const erc20Abi = require("./erc20Abi");
+// const forgeAbi = require("./forgeAbi");
+const erc20Abi = require("./ERC20.json").abi;
+const forgeAbi = require("./ForgeToken.json").abi;
 
 // Contract Instances
 const zut = new web3.eth.Contract(erc20Abi, ZUT_ADDRESS);
